@@ -2,12 +2,89 @@
 
 pragma solidity >=0.8.11 <0.9.0;
 
-import "@thirdweb-dev/contracts/token/TokenERC20.sol"; // for my ERC20 token
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol"; // for security
 
-contract Egame is ReentrancyGuard {
+interface IERC20 {
 
-  TokenERC20 public immutable tokenContract; // store the token contract
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+
+contract ERC20 is IERC20 {
+
+    string public constant NANME = "EGAME";
+    string public constant SYMBOL = "EGM";
+    uint8 public constant DECIMALS = 18;
+
+    mapping(address => uint256) public balances;
+
+    mapping(address => mapping (address => uint256)) public allowed;
+
+    uint256 public totalSupply_ = 1000 ether;
+
+
+    constructor() {
+      balances[msg.sender] = totalSupply_;
+    }
+
+    function totalSupply() public override view returns (uint256) {
+      return totalSupply_;
+    }
+
+    function balanceOf(address tokenOwner) public override view returns (uint256) {
+      return balances[tokenOwner];
+    }
+
+    function transfer(address receiver, uint256 numTokens) public override returns (bool) {
+      require(numTokens <= balances[msg.sender], "Supply exceded");
+      balances[msg.sender] = balances[msg.sender]-numTokens;
+      balances[receiver] = balances[receiver]+numTokens;
+      emit Transfer(msg.sender, receiver, numTokens);
+      return true;
+    }
+
+    function approve(address delegate, uint256 numTokens) public override returns (bool) {
+      allowed[msg.sender][delegate] = numTokens;
+      emit Approval(msg.sender, delegate, numTokens);
+      return true;
+    }
+
+    function allowance(address owner, address delegate) public override view returns (uint) {
+      return allowed[owner][delegate];
+    }
+
+    function transferFrom(address owner, address buyer, uint256 numTokens) public override returns (bool) {
+      require(numTokens <= balances[owner], "Supply exceded");
+      require(numTokens <= allowed[owner][msg.sender], "allowance");
+
+      balances[owner] = balances[owner]-numTokens;
+      allowed[owner][msg.sender] = allowed[owner][msg.sender]-numTokens;
+      balances[buyer] = balances[buyer]+numTokens;
+      emit Transfer(owner, buyer, numTokens);
+      return true;
+    }
+}
+
+
+
+
+
+contract Egame is ERC20, ReentrancyGuard {
+
+  IERC20 public token;
+
+  event Bought(uint256 amount);
+  event Sold(uint256 amount); // store the token contract
 
   struct MapValue {
     uint256 score;
@@ -19,8 +96,8 @@ contract Egame is ReentrancyGuard {
   mapping(address => MapValue) public mappingPlayer;
 
 
-  constructor(TokenERC20 addressTokenContract) {
-    tokenContract = addressTokenContract;
+  constructor() {
+    token = new ERC20();
   }
 
 
@@ -52,19 +129,19 @@ contract Egame is ReentrancyGuard {
 
   function claimToken() external nonReentrant {
     uint256 _amount = getToken(msg.sender);
-    require(tokenContract.balanceOf(address(this)) > _amount, "Supply exceeded");
+    uint256 dexBalance = token.balanceOf(address(this));
+    require(token.balanceOf(address(this)) > _amount, "Supply exceeded");
+    require(_amount <= dexBalance, "Not enough tokens in the reserve");
+
 
     // reset to 0
     mappingPlayer[msg.sender].token = 0;
 
     // transfering token
-    tokenContract.transfer(msg.sender, _amount);
+    token.transfer(msg.sender, _amount);
+    emit Bought(_amount);
 
   }
-
-
-
-
 
   // ===== private function vor validating =====
   // calculate the token that player get direcly
@@ -85,12 +162,12 @@ contract Egame is ReentrancyGuard {
 
   }
 
+  // verify function set pointer when inputing score
+  //
   function getPointer(address _player) private view returns (bytes32) {
     return mappingPlayer[_player].pointer;
   }
 
-  // verify function set pointer when inputing score
-  //
   function setPointer(address _player, uint256 oldScore) private pure returns (bytes32) {
     bytes32 newPointer = keccak256(abi.encodePacked(_player, oldScore));
     return newPointer;
@@ -101,11 +178,6 @@ contract Egame is ReentrancyGuard {
     bytes32 newPointer = setPointer(_player, _oldScore);
     return (newPointer == oldPointer);
   }
-
-
-
-
-
 
   // for interface
   function getScore(address _player) public view returns (uint256) {

@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import contractAbi from './contract/Egame.json';
 
 function App() {
-  let contractEgame = "0x54a30D15f123678db68fe93499d3165d999Db665";
+  let contractEgame = "0x9938f85436030C4eA7BACD0189a00AC830864951";
   const abi = contractAbi.abi;
 
 	const [defaultAccount, setDefaultAccount] = useState(null);
